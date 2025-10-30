@@ -12,19 +12,21 @@ function [] = tensor_reconstruction()
     X_3 = mode_n_matricization(X_0, 3);
     alphas = ones(1, n) / n;
     betas = ones(1, n) / 100;
-    rho = 1;
+    rho = 0.01;
     T = {mode_n_matricization(image, 1), mode_n_matricization(image, 2), mode_n_matricization(image, 3)};
     M = {X_1, X_2, X_3};
     X = X_0;
-    Y = {zeros(1, like=X_1), zeros(1, like=X_2), zeros(1, like=X_3)};
 
-    [reconstructed, errors] = silrtc(M, X, alphas, betas, n, lin_rem_idx, 100, T, image);
-    plot(errors(:, 4))
+    % [reconstructed, errors] = silrtc(M, X, alphas, betas, n, lin_rem_idx, 100, T, image);
+
+    Y = {X*0, X*0, X*0};
+    M_halrtc = {X_0, X_0, X_0};  % these are not matricized
+    [reconstructed, errors] = halrtc(M_halrtc, X, Y, alphas, rho, n, lin_rem_idx, 100, T, image);
 end
 
 function [image, M, N] = load_image()
     image = imread("image1.tiff", "tiff");
-    image = image(1:256, 1:256, :);
+    % image = image(1:30, 1:30, :);
     sz = size(image);
     M = sz(1);
     N = sz(2);
@@ -35,7 +37,7 @@ function [omega, omega_overline, removed_idx, kept_idx, lin_rem_idx] = create_ma
     omega_overline = [];
     removed_idx = [];
     kept_idx = [];
-    image_size = 256;
+    image_size = 512;
     pixel_count = image_size*image_size;
     no_removed = round(pixel_count*removed_percentage);
     removed_flattened = randperm(pixel_count, no_removed);  % idx to remove from the flattened array
@@ -72,19 +74,25 @@ function [X, errors] = silrtc(M, X, alphas, betas, n, lin_rem_idx, K, T, image)
     end
 end
 
-function halrtc(M, X, Y, alphas, rho, n, idx_removed, K)
-    selection = @(m) m(idx_removed(:, 1), idx_removed(:, 2), :);
-    X_things = zeros(length(idx_removed, 1));  % for collecting the average of all versions of the optimizaiton variables
-    
+function [X, errors] = halrtc(M, X, Y, alphas, rho, n, lin_rem_idx, K, T, image)
+    X_things = zeros(size(X));  % for collecting the average of all versions of the optimizaiton variables
+    errors = ones(K, 4);
+
     for j = 1:K
+        X_things = zeros(size(X));
         for i = 1:n
-            M(i) = mode_n_folding(shrinkage(mode_n_matricization(X) + mode_n_matricization(Y, i) / rho, alphas(i) / rho));
-            X_things = X_things + M(i) - Y(i) / rho;
+            M{i} = mode_n_folding(shrinkage(mode_n_matricization(X, i) + mode_n_matricization(Y{i}, i) / rho, alphas(i) / rho), i, size(X));
+            X_things = X_things + M{i} - Y{i} / rho;
         end
-        X(idx_removed(:, 1), idx_removed(:, 2), :) = selection(X_things) / n;
+        X(lin_rem_idx) = X_things(lin_rem_idx) / n;
         for i = 1:n
-            Y(i) = Y(i) - (M(i) - X) * rho;
+            Y{i} = Y{i} - (M{i} - X) * rho;
         end
+
+        for asdf = 1:3
+            errors(j, asdf) = frob_norm(double(image)-M{asdf});
+        end
+        errors(j, 4) = frob_norm(double(image) - X);
     end
 end
 
